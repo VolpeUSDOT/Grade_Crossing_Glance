@@ -1,0 +1,256 @@
+---
+title: "Grade Crossing Sign Glance Analysis"
+author: "Dan Flynn"
+date: "3/23/2020"
+output:
+  html_document:
+    fig_caption: true
+    df_print: paged
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+---
+
+<!-- Add the following line manually to the rendered HTML document so that IE does not block the javascript elements: -->
+<!-- saved from url=(0014)about:internet --> 
+
+
+```{r setup1, include=FALSE}
+source("get_packages.R")
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+```
+
+# Overview
+
+- Analyze eye glance behavior from a simulator study, where participants conduct 'drives' across grade crossings.
+- The crossings can have one of three types of errors: 
+  + Gate, No Train
+  + Train, No Gate
+  + Stuck
+
+- In addition, the Emergency Notification Sign (ENS) can be placed parallel to the train tracks or perpendicular to the train tracks.
+  + Gate, No Train: Parallel or perpendicular.
+  + Train, No Gate: Parallel or perpendicular
+  + Stuck: Parallel or perpendicular
+
+- The combination of Error Type and Sign Position generates 5 possible conditions. Each participant experiences all 5 conditions, with the final condition always being 'Stuck' (parallel or perpendicular.)
+  + Each participant experiences all four conditions of Gate, No Train (parallel and perpendicular) and Train, No Gate (parallel and perpendicular), as well as one Stuck condition (parallel or perpendicular). 
+  + The order of the first four conditions is randomized, while the last is always Stuck.
+
+There are two possible outcomes: 
+
+- Glanced: Participant correctly glanced at the sign
+- Called: Participant stated that they would make a call to the appropriate emergency number on the sign.
+
+These will be analyzed as separate response variables, since it is possible to have one and not the other. Thus, we'll have two models to report results on in the end:
+
+$$ 
+Glanced = \beta_1*Error Type + \beta_2*Sign Position + \beta_3*Age + \beta_4*Gender + \epsilon
+$$
+
+And
+
+$$ 
+Called = \beta_1*Error Type + \beta_2*Sign Position + \beta_3*Age + \beta_4*Gender + \epsilon
+$$
+These will be logistic models, since the outcome variable in each case is binary. We'll use model selection to decide if the mediating variables of age and gender are useful. In addition, we may consider the order that the scenarios were run as well, namely 'first parallel' and 'first perpendicular'.
+
+
+
+## Variables
+
+From study metadata:
+
+| Variable    | Explanation |
+|-------------|-------------|
+| Participant ID |	1 thru 48 |
+| Age	        |    Participants Age| 
+| Gender	    | Participants Gender (M, F, TGNC) |
+| Crossing ID	| Run 1 = 1 (parallel), Run 2 = 2 (parallel), Run 3 = 3 (Perpendicular), Run 4 = 4 (Perpendicular), Run 5 = 5(Stuck on Track) |
+| Error Type	| Type of Malfunction (Gate, No Train or Train, No Gate) |
+| Sign Position |	Position if ENS (Parallel or Perpendicular) |
+| Glanced	| 0 = no, 1 = Yes |
+| Called	| 0 = no, 1 = Yes |
+
+
+# EDA
+
+Quick exploratory data analysis to check for data completeness and understand distributions.
+
+```{r setup}
+library(readxl)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(ggplot2)
+library(plotly)
+library(sjPlot)
+
+d <- read_xlsx(file.path('Data', 'Analysis and Glance Score.xlsx'), sheet = 'Data')
+
+# Filter out rows where glanced or called is NA
+d <- d %>% 
+  filter(!(is.na(Glanced) | is.na(Called)))
+```
+
+```{r eda_table}
+summ_tab <- d %>%
+  group_by(`Error Type`, `Sign Position`) %>%
+  summarize(count = n(),
+            Correct_Glance = sum(Glanced),
+            Correct_Called = sum(Called),
+            Pct_Correct_Glance = Correct_Glance / count,
+            Pct_Correct_Called = Correct_Called /count)
+
+kable(summ_tab,
+      caption = 'Summary of data') %>% 
+  kable_styling(bootstrap_options = c('striped','hover'))
+
+```
+
+It seems clear that parallel is the better orientation for both the gate, no train and train, no gate conditions. However, when stuck on the track, it seems better for the sign to be perpendicular to the train track.
+
+
+```{r eda_plots}
+
+gp1 <- 
+  ggplot(summ_tab, aes(x = `Error Type`, color = `Sign Position`)) +
+  geom_point(aes(y = Pct_Correct_Glance, size = count)) +
+  scale_size(range = c(3, 8)) +
+  ylim(c(0, 1)) + 
+  theme_bw() +
+  ggtitle('Percent of correct glances by error type and sign position')
+
+
+gp2 <-
+  ggplot(summ_tab, aes(x = `Error Type`, color = `Sign Position`)) +
+  geom_point(aes(y = Pct_Correct_Called, size = count)) +
+  scale_size(range = c(3, 8)) +
+  ylim(c(0, 1)) + 
+  theme_bw() +
+  ggtitle('Percent of correct calling behavior by error type and sign position')
+
+
+ggplotly(gp1)
+ggplotly(gp2)
+
+```
+
+# Analysis
+
+## Glance analysis
+
+```{r glance_mods}
+
+# Intercept = first alphabetical category of error type, namely gate, no train
+gm1 <- glm(Glanced ~ `Error Type` + `Sign Position`,
+           family = 'binomial',
+           data = d)
+
+# Now add interaction
+gm2 <- glm(Glanced ~ `Error Type` * `Sign Position`,
+           family = 'binomial',
+           data = d)
+
+AIC(gm1, gm2) # Second model wins
+
+# Add age and gender to gm2. NAs found in age (and also found to be insignificant), so dropping Age
+gm3 <- glm(Glanced ~ `Error Type` * `Sign Position` + Age + Gender,
+           family = 'binomial',
+           data = d)
+
+gm3 <- glm(Glanced ~ `Error Type` * `Sign Position` + Gender,
+           family = 'binomial',
+           data = d)
+
+
+AIC(gm2, gm3) # Substantial improvment
+
+tab_model(gm3) 
+
+```
+
+Interpretation:
+
+- Intercept: This is the coefficient for correct glance rate for the alphabetical first category in Error Type, which is 'Gate, No Train'. Overall, people are likely to glance correctly. The significance is in comparison to the null hypothesis of Odds = 1 for the intercept.
+
+The manual calculations below show how the odds and odds ratios would be calculated for just the Error Type variable alone. The statistical model `gm3` above accounts for all the variables. The example below shows how the intercept = the Odds of the first level of the categorical variable, while the other coefficients are the ratios of the odds of that category compared to the intercept.
+
+```{r manual_calcs}
+d_sum <- d %>% 
+  group_by(`Error Type`) %>% 
+  summarize(count = n(), 
+            Correct_Glance = sum(Glanced),
+            Pct_Correct_Glance = Correct_Glance / count,
+            Odds = ( Correct_Glance / (count - Correct_Glance) ) 
+            ) 
+
+kable(d_sum, caption = 'Example calculations of odds') %>% 
+  kable_styling(bootstrap_options = c('striped','hover'))
+
+d_sum$Odds[2] / d_sum$Odds[1]
+d_sum$Odds[3] / d_sum$Odds[1]
+
+# Compare to a model.
+gm_ex <- glm(Glanced ~ `Error Type`,
+           family = 'binomial',
+           data = d)
+tab_model(gm_ex)
+
+```
+
+- Compared to Gate, No Train overall, people are much less likely to glance correctly in the Stuck condition
+- There is no difference in glance rates for Train, No Gate
+- People are much less likely to glance correctly when the sign is perpendicular to the tracks (but see below...)
+- Age is not important
+- Gender: Males are less than half as likely to glance correctly as females in this study
+- There is an extremely important interaction between sign position and error type: participants are 140x more likely to glance correctly when in the stuck position and the sign is perpendicular compared to the intercept
+- There is also a small but insignificant increase in correct glance behavior when the sign is perpendicular in the Train, No Gate condition.
+
+
+## Call analysis
+
+```{r call_mods}
+
+# Intercept = first alphabetical category of error type, namely gate, no train
+cm1 <- glm(Called ~ `Error Type` + `Sign Position`,
+           family = 'binomial',
+           data = d)
+
+# Now add interaction
+cm2 <- glm(Called ~ `Error Type` * `Sign Position`,
+           family = 'binomial',
+           data = d)
+
+AIC(cm1, cm2) # Second model wins
+
+# Add age and gender to cm2
+cm3 <- glm(Called ~ `Error Type` * `Sign Position` + Age + Gender,
+           family = 'binomial',
+           data = d)
+
+# NAs in age, so drop that
+cm3 <- glm(Called ~ `Error Type` * `Sign Position` + Gender,
+           family = 'binomial',
+           data = d)
+
+
+AIC(cm2, cm3) # Substantial improvment
+
+tab_model(cm3) 
+
+```
+
+
+
+Interpretation:
+
+- Compared to the glance behavior, people are much less likely to make the correct call in the baseline condition of Gate, No Train.
+- There are no significant effects of Stuck or Train, No Gate on this effect.
+- Sign position overall does not matter... (but see below)
+- Males are far less likely to call
+- There is a 25x increase in correct call behavior when the sign is perpendicular to the tracks when in the Stuck condition
