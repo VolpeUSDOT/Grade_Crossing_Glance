@@ -90,7 +90,7 @@ library(ggplot2)
 library(plotly)
 library(sjPlot)
 
-d <- read_xlsx(file.path('Data', 'Analysis and Glance Score.xlsx'), sheet = 'Data')
+d <- read_xlsx(file.path('Data', 'Analysis and Glance Score 3 17 20.xlsx'), sheet = 'Data')
 
 # Filter out rows where glanced or called is NA
 d <- d %>% 
@@ -140,6 +140,41 @@ ggplotly(gp2)
 
 ```
 
+Taking a look at the gender differences:
+
+
+```{r gender_plots}
+summ_tab2 <- d %>%
+  group_by(Gender, `Error Type`) %>%
+  summarize(count = n(),
+            Correct_Glance = sum(Glanced),
+            Correct_Called = sum(Called),
+            Pct_Correct_Glance = Correct_Glance / count,
+            Pct_Correct_Called = Correct_Called /count)
+
+gp3 <-
+  ggplot(summ_tab2, aes(x = `Error Type`, color = Gender)) +
+  geom_point(aes(y = Pct_Correct_Glance, size = count)) +
+  scale_size(range = c(3, 8)) +
+  ylim(c(0, 1)) + 
+  theme_bw() +
+  ggtitle('Percent of correct glance behavior by error type and gender')
+
+gp4 <-
+  ggplot(summ_tab2, aes(x = `Error Type`, color = Gender)) +
+  geom_point(aes(y = Pct_Correct_Called, size = count)) +
+  scale_size(range = c(3, 8)) +
+  ylim(c(0, 1)) + 
+  theme_bw() +
+  ggtitle('Percent of correct calling behavior by error type and gender')
+
+
+
+ggplotly(gp3)
+ggplotly(gp4)
+
+```
+
 # Analysis
 
 ## Glance analysis
@@ -158,19 +193,19 @@ gm2 <- glm(Glanced ~ `Error Type` * `Sign Position`,
 
 AIC(gm1, gm2) # Second model wins
 
-# Add age and gender to gm2. NAs found in age (and also found to be insignificant), so dropping Age
-gm3 <- glm(Glanced ~ `Error Type` * `Sign Position` + Age + Gender,
+# Add age and gender to gm2. 
+gm3a <- glm(Glanced ~ `Error Type` * `Sign Position` + Age + Gender,
            family = 'binomial',
            data = d)
 
-gm3 <- glm(Glanced ~ `Error Type` * `Sign Position` + Gender,
+gm3b <- glm(Glanced ~ `Error Type` * `Sign Position` + Gender,
            family = 'binomial',
            data = d)
 
 
-AIC(gm2, gm3) # Substantial improvment
+AIC(gm2, gm3a, gm3b) # Some improvment, best with age included
 
-tab_model(gm3) 
+tab_model(gm3a) 
 
 ```
 
@@ -206,9 +241,9 @@ tab_model(gm_ex)
 - Compared to Gate, No Train overall, people are much less likely to glance correctly in the Stuck condition
 - There is no difference in glance rates for Train, No Gate
 - People are much less likely to glance correctly when the sign is perpendicular to the tracks (but see below...)
-- Age is not important
-- Gender: Males are less than half as likely to glance correctly as females in this study
-- There is an extremely important interaction between sign position and error type: participants are 140x more likely to glance correctly when in the stuck position and the sign is perpendicular compared to the intercept
+- Age: Model with age included was better than model without age. However, there is no significant effect of age.
+- Gender: Males are less than half as likely to glance correctly as females in this study. TGNC individuals show a minor but statistically insignificant increase in correct glance behavior compared to females.
+- There is an extremely important interaction between sign position and error type: participants are more than 100x more likely to glance correctly when in the stuck position and the sign is perpendicular compared to the intercept
 - There is also a small but insignificant increase in correct glance behavior when the sign is perpendicular in the Train, No Gate condition.
 
 
@@ -229,19 +264,19 @@ cm2 <- glm(Called ~ `Error Type` * `Sign Position`,
 AIC(cm1, cm2) # Second model wins
 
 # Add age and gender to cm2
-cm3 <- glm(Called ~ `Error Type` * `Sign Position` + Age + Gender,
+cm3a <- glm(Called ~ `Error Type` * `Sign Position` + Age + Gender,
            family = 'binomial',
            data = d)
 
-# NAs in age, so drop that
-cm3 <- glm(Called ~ `Error Type` * `Sign Position` + Gender,
+# Without age
+cm3b <- glm(Called ~ `Error Type` * `Sign Position` + Gender,
            family = 'binomial',
            data = d)
 
 
-AIC(cm2, cm3) # Substantial improvment
+AIC(cm2, cm3a, cm3b) # cm3b best model (without age)
 
-tab_model(cm3) 
+tab_model(cm3b) 
 
 ```
 
@@ -253,4 +288,4 @@ Interpretation:
 - There are no significant effects of Stuck or Train, No Gate on this effect.
 - Sign position overall does not matter... (but see below)
 - Males are far less likely to call
-- There is a 25x increase in correct call behavior when the sign is perpendicular to the tracks when in the Stuck condition
+- There is a 20x increase in correct call behavior when the sign is perpendicular to the tracks when in the Stuck condition
